@@ -1,6 +1,7 @@
 # Anime Downloader Bot
 
-- No inline menu
-- Reply keyboard only
-- Admin panel on /start
+- Reply Keyboard Only
+- Admin Panel on /start
+- Full Add Anime Flow
 - 24/7 Render
+- Zero Storage
