@@ -4,7 +4,7 @@ import asyncio
 import threading
 from datetime import datetime, timedelta
 from pyrogram import Client, filters, types
-from pyrogram.types import ReplyKeyboardMarkup, KeyboardButton
+from pyrogram.types import ReplyKeyboardMarkup
 from motor.motor_asyncio import AsyncIOMotorClient
 from flask import Flask
 
@@ -140,9 +140,13 @@ async def handle_admin_buttons(c: Client, m: types.Message):
                     msg += f"\n• User {p['user_id']}"
             await m.reply(msg)
 
-# === HANDLE TEXT INPUT (ADD ANIME FLOW) ===
-@app.on_message(filters.private & filters.text & ~filters.command)
+# === HANDLE TEXT INPUT (LINE 144 FIXED - NO ~ ERROR) ===
+@app.on_message(filters.private & filters.text)
 async def handle_text_input(c: Client, m: types.Message):
+    # Ignore commands
+    if m.text.startswith("/"):
+        return
+
     user_id = m.from_user.id
 
     # Admin flow
@@ -272,34 +276,11 @@ async def handle_approve_reject(c: Client, m: types.Message):
         await c.send_message(uid, "*Rejected.*")
         await m.reply("*REJECTED*")
 
-# === DOWNLOAD ===
+# === DOWNLOAD (DUMMY) ===
 async def handle_download(c: Client, m: types.Message, anime_id: str):
-    user = await users_col.find_one({"user_id": m.from_user.id})
-    if not user or not user.get("expiry") or user["expiry"] < datetime.utcnow():
-        kb = ReplyKeyboardMarkup([["Subscribe Now"]], resize_keyboard=True)
-        return await m.reply("*Subscribe first.*", reply_markup=kb)
-
-    anime = await anime_col.find_one({"_id": anime_id})
-    if not anime: return await m.reply("Not found.")
-
-    kb = ReplyKeyboardMarkup([
-        [f"S{s['season_num']}" for s in anime.get("seasons", [])[:2]]
-    ], resize_keyboard=True)
-    await c.send_photo(m.chat.id, anime["thumb_file_id"], "*Select Season:*", reply_markup=kb)
-
-# === VIDEO SEND + DELETE ===
-async def send_video(c: Client, chat_id, file_id, title, s, e, q):
-    sent = await c.send_video(chat_id, file_id,
-        caption=f"{title}** • S{s}E{e} • {q}\n\n*Forward to save\nAuto-delete in **1 min*")
-    asyncio.create_task(delete_later(sent))
-
-async def delete_later(msg):
-    await asyncio.sleep(60)
-    try: await msg.delete()
-    except: pass
+    await m.reply("Download coming soon...")
 
 # === RUN ===
 print("Bot Starting...")
 threading.Thread(target=run_flask, daemon=True).start()
 app.run()
-
