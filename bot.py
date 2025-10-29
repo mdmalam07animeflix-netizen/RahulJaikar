@@ -117,7 +117,7 @@ async def view_anime(c, q):
 
 @app.on_callback_query(filters.regex("^season_"))
 async def season(c, q):
-    , anime_id, season_num = q.data.split("")
+    _, anime_id, season_num = q.data.split("")
     anime = anime_col.find_one({"_id": anime_id})
     season = next((s for s in anime["seasons"] if s["season_num"] == int(season_num)), None)
     if not season: return
@@ -203,3 +203,4 @@ Thread(target=keep_alive, daemon=True).start()
 
 print("Bot started!")
 app.run()
+
