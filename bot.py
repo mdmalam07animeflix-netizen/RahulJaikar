@@ -9,11 +9,29 @@ from pyrogram.types import (
 from pymongo import MongoClient
 
 # === SECRETS FROM ENVIRONMENT ===
-API_ID = int(os.getenv("21145823"))
-API_HASH = os.getenv("91607c51ec63047941b52864afcc2678")
-BOT_TOKEN = os.getenv("8291727496:AAErRGXAoIQfcpPkX2xuP8UBOT2noGDSzok")
-MONGO_URI = os.getenv("mongodb+srv://broturn6_db_user:5OYDh23Oeus6aMLz@rjzone.zg8eroa.mongodb.net/?appName=Rjzone")
-ADMIN_ID = int(os.getenv("7101839475"))
+# === SAFE ENVIRONMENT LOADER ===
+def get_env(key, cast=None, default=None):
+    value = os.getenv(key)
+    if value is None:
+        print(f"ERROR: {key} not set in environment!")
+        return default
+    if cast == int:
+        try:
+            return int(value)
+        except:
+            print(f"ERROR: {key} must be integer!")
+            return default
+    return value
+
+API_ID = get_env("API_ID", cast=int)
+API_HASH = get_env("API_HASH")
+BOT_TOKEN = get_env("BOT_TOKEN")
+MONGO_URI = get_env("MONGO_URI")
+ADMIN_ID = get_env("ADMIN_ID", cast=int)
+
+if not all([API_ID, API_HASH, BOT_TOKEN, MONGO_URI, ADMIN_ID]):
+    print("FATAL: Missing secrets! Check Render.")
+    exit(1)
 # =================================
 
 app = Client("anime_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
@@ -312,4 +330,5 @@ async def handle_approve_reject(client, query):
 # ... (full implementation for add/remove, download flow, etc. - use previous code snippets)
 
 if __name__ == "__main__":
+
     app.run()
