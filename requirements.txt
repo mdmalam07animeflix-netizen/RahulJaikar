@@ -1,6 +1,5 @@
-pyrogram==2.0.106
-pymongo==4.5.0
-flask==2.3.3
-dnspython
-pysocks
-requests==2.31.0
+Pyrogram==2.0.106
+TgCrypto
+motor
+python-dotenv
+flask
