@@ -126,7 +126,7 @@ async def season(c, q):
 
 @app.on_callback_query(filters.regex("^ep_"))
 async def episode(c, q):
-    , anime_id, season_num, ep_num = q.data.split("")
+    _, anime_id, season_num, ep_num = q.data.split("")
     anime = anime_col.find_one({"_id": anime_id})
     season = next((s for s in anime["seasons"] if s["season_num"] == int(season_num)), None)
     ep = next((e for e in season["episodes"] if e["ep_num"] == int(ep_num)), None)
@@ -203,4 +203,5 @@ Thread(target=keep_alive, daemon=True).start()
 
 print("Bot started!")
 app.run()
+
 
