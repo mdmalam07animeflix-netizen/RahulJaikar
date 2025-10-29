@@ -141,7 +141,7 @@ async def handle_admin_buttons(c: Client, m: types.Message):
             await m.reply(msg)
 
 # === HANDLE TEXT INPUT (ADD ANIME FLOW) ===
-@app.on_message(filters.private & ~filters.command)
+@app.on_message(filters.private & filters.text & ~filters.command)
 async def handle_text_input(c: Client, m: types.Message):
     user_id = m.from_user.id
 
@@ -302,3 +302,4 @@ async def delete_later(msg):
 print("Bot Starting...")
 threading.Thread(target=run_flask, daemon=True).start()
 app.run()
+
