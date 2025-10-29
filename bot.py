@@ -5,7 +5,7 @@ from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from pymongo import MongoClient
 from threading import Thread
 import requests
-from datetime import datetime, timedelta
+from datetime import datetime
 
 # === ENV LOADER ===
 def get_env(key, cast=None, default=None):
@@ -76,16 +76,6 @@ async def start(client, message):
         expiry = sub["expiry"].strftime("%d %b %Y") if sub and sub.get("expiry") else "Not subscribed"
         await message.reply(f"*Anime Vault Pro*\n\nExpiry: {expiry}\n\nChoose:", reply_markup=user_kb())
 
-# === SHOW ANIME ===
-async def show_anime(message, anime):
-    kb = [[InlineKeyboardButton(f"Season {s['season_num']}", callback_data=f"season_{anime['id']}{s['season_num']}")] for s in anime["seasons"]]
-    await message.reply_photo(
-        anime["thumbnail"],
-        caption=f"{anime['name']}\n\nChoose season:",
-        reply_markup=InlineKeyboardMarkup(kb),
-        parse_mode="markdown"
-    )
-
 # === CALLBACKS ===
 @app.on_callback_query(filters.regex("^add_anime$"))
 async def add_anime_cb(c, q):
@@ -129,9 +119,9 @@ async def season(c, q):
         return
     anime = anime_col.find_one({"_id": anime_id})
     if not anime: return
-    season_data = next((s for s in anime["seasons"] if str(s["season_num"]) == season_num), None)
-    if not season_data: return
-    kb = [[InlineKeyboardButton(f"Ep {e['ep_num']}", callback_data=f"ep_{anime_id}{season_num}{e['ep_num']}")] for e in season_data["episodes"]]
+    season = next((s for s in anime["seasons"] if str(s["season_num"]) == season_num), None)
+    if not season: return
+    kb = [[InlineKeyboardButton(f"Ep {e['ep_num']}", callback_data=f"ep_{anime_id}{season_num}{e['ep_num']}")] for e in season["episodes"]]
     await q.edit_message_reply_markup(reply_markup=InlineKeyboardMarkup(kb))
 
 @app.on_callback_query(filters.regex("^ep_"))
@@ -139,4 +129,97 @@ async def episode(c, q):
     try:
         _, anime_id, season_num, ep_num = q.data.split("")
     except ValueError:
-        await q.answer("Invalid episode!", show
+        await q.answer("Invalid episode!", show_alert=True)
+        return
+    
+    anime = anime_col.find_one({"_id": anime_id})
+    if not anime:
+        await q.answer("Anime not found!", show_alert=True)
+        return
+    
+    season = next((s for s in anime["seasons"] if str(s["season_num"]) == season_num), None)
+    if not season:
+        await q.answer("Season not found!", show_alert=True)
+        return
+    
+    ep = next((e for e in season["episodes"] if str(e["ep_num"]) == ep_num), None)
+    if not ep:
+        await q.answer("Episode not found!", show_alert=True)
+        return
+    
+    await q.message.reply_video(
+        ep["file_id"],
+        caption=f"{anime['name']} - S{season_num}E{ep_num}",
+        parse_mode="markdown"
+    )
+
+# === ADMIN STATE ===
+@app.on_message(filters.private & filters.user(ADMIN_ID))
+async def admin_state(c, m):
+    uid = m.from_user.id
+    cur = state.get(uid)
+    if not cur: return
+
+    if cur == "add_name":
+        name = m.text.strip()
+        if not name: return await m.reply("Invalid name!")
+        state[uid] = f"add_thumb|{name}"
+        await m.reply("Send thumbnail photo:")
+
+    elif cur.startswith("add_thumb|"):
+        if not m.photo: return await m.reply("Send a photo!")
+        thumb = m.photo.file_id
+        name = cur.split("|", 1)[1]
+        doc = {
+            "name": name,
+            "thumbnail": thumb,
+            "seasons": [{"season_num": 1, "episodes": []}]
+        }
+        res = anime_col.insert_one(doc)
+        await m.reply(f"Added!\nShare: https://t.me/AnimeVaultProBot?start=anime_{res.inserted_id}", parse_mode="markdown")
+        del state[uid]
+
+    elif cur == "set_amount":
+        try:
+            amt = int(m.text)
+            state[uid] = f"set_days|{amt}"
+            await m.reply("Send validity (days):")
+        except:
+            await m.reply("Invalid amount!")
+
+    elif cur.startswith("set_days|"):
+        try:
+            days = int(m.text)
+            amt = int(cur.split("|", 1)[1])
+            config_col.update_one({"key": "sub"}, {"$set": {"amount": amt, "days": days}}, upsert=True)
+            await m.reply(f"Sub set: ₹{amt} for {days} days")
+            del state[uid]
+        except:
+            await m.reply("Invalid days!")
+
+# === SUBSCRIBE ===
+@app.on_callback_query(filters.regex("^subscribe$"))
+async def subscribe(c, q):
+    config = config_col.find_one({"key": "sub"})
+    if not config:
+        return await q.answer("Subscription not set!", show_alert=True)
+    await q.edit_message_text(
+        f"*Subscribe*\n\nAmount: ₹{config['amount']}\nValidity: {config['days']} days\n\n"
+        "Send payment screenshot to admin.",
+        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Pay Now", callback_data="pay")]])
+    )
+
+# === 24/7 PING ===
+def keep_alive():
+    url = "https://rahuljaikar.onrender.com"
+    while True:
+        try:
+            requests.get(url, timeout=10)
+        except:
+            pass
+        asyncio.run(asyncio.sleep(300))
+
+Thread(target=keep_alive, daemon=True).start()
+
+print("Bot started!")
+app.run()
