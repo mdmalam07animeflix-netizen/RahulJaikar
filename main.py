@@ -6,12 +6,9 @@ from datetime import datetime, timedelta
 from pyrogram import Client, filters, types
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from motor.motor_asyncio import AsyncIOMotorClient
-from dotenv import load_dotenv
 from flask import Flask
 
-load_dotenv()
-
-# === CONFIG ===
+# === CONFIG FROM RENDER ENVIRONMENT (NO .env) ===
 API_ID = int(os.getenv("API_ID"))
 API_HASH = os.getenv("API_HASH")
 BOT_TOKEN = os.getenv("BOT_TOKEN")
@@ -53,7 +50,7 @@ def run_flask():
     port = int(os.getenv("PORT", 8000))
     flask_app.run(host='0.0.0.0', port=port)
 
-# === START COMMAND ===
+# === START COMMAND (ADMIN = DIRECT PANEL) ===
 @app.on_message(filters.private & filters.command("start"))
 async def start_cmd(c: Client, m: types.Message):
     args = m.text.split()
@@ -61,42 +58,42 @@ async def start_cmd(c: Client, m: types.Message):
         await handle_download(c, m, args[1][6:])
         return
 
+    # ADMIN = DIRECT PANEL
+    if m.from_user.id == ADMIN_ID:
+        await admin_panel(c, m)
+        return
+
+    # NORMAL USER
     cfg = await get_config()
     user = await users_col.find_one({"user_id": m.from_user.id})
     expiry = "Not Subscribed"
     if user and user.get("expiry") and user["expiry"] > datetime.utcnow():
         expiry = f"Active till *{user['expiry'].strftime('%d %b %Y')}*"
 
-    kb = [
+    kb = InlineKeyboardMarkup([
         [InlineKeyboardButton("Subscribe Now", callback_data="subscribe")],
         [InlineKeyboardButton("Donate Now", callback_data="donate")],
         [InlineKeyboardButton("Join Backup", url=cfg["backup_channel"])],
         [InlineKeyboardButton("Support", url=cfg["support_chat"])],
-    ]
+    ])
 
     await m.reply(
         f"*Anime Downloader\n\nSubscription:* {expiry}\n\nUse *DOWNLOAD* in channel.",
-        reply_markup=InlineKeyboardMarkup(kb)
+        reply_markup=kb
     )
 
-# === MENU BUTTON ===
-@app.on_message(filters.private & filters.command("menu"))
-async def menu_cmd(c: Client, m: types.Message):
-    if m.from_user.id == ADMIN_ID:
-        await admin_panel(c, m)
-    else:
-        await start_cmd(c, m)
-
-# === ADMIN PANEL (3-LINE) ===
-@app.on_message(filters.user(ADMIN_ID) & filters.command("panel"))
+# === ADMIN PANEL (3-LINE INLINE) ===
 async def admin_panel(c: Client, m: types.Message):
     cfg = await get_config()
     pending = await pending_sub.count_documents({})
 
-    kb = [
-        [InlineKeyboardButton("Add Anime", callback_data="add_anime"), InlineKeyboardButton("Add Movie", callback_data="add_movie")],
-        [InlineKeyboardButton("Remove Anime", callback_data="rem_anime"), InlineKeyboardButton("Remove Movie", callback_data="rem_movie")],
-        [InlineKeyboardButton("Manage Anime", callback_data="manage_anime"), InlineKeyboardButton("Manage Movie", callback_data="manage_movie")],
+    kb = InlineKeyboardMarkup([
+        [InlineKeyboardButton("Add Anime", callback_data="add_anime"),
+         InlineKeyboardButton("Add Movie", callback_data="add_movie")],
+        [InlineKeyboardButton("Remove Anime", callback_data="rem_anime"),
+         InlineKeyboardButton("Remove Movie", callback_data="rem_movie")],
+        [InlineKeyboardButton("Manage Anime", callback_data="manage_anime"),
+         InlineKeyboardButton("Manage Movie", callback_data="manage_movie")],
         [],
         [InlineKeyboardButton("Set Price & Days", callback_data="set_price")],
         [InlineKeyboardButton("Set Sub QR", callback_data="set_sub_qr")],
@@ -109,12 +106,16 @@ async def admin_panel(c: Client, m: types.Message):
         [InlineKeyboardButton("Donate Now", callback_data="donate")],
         [InlineKeyboardButton("Join Backup", url=cfg["backup_channel"])],
         [InlineKeyboardButton("Support", url=cfg["support_chat"])],
-    ]
+    ])
 
-    await m.reply(
-        f"*Admin Panel*\nPrice: ₹{cfg['price']} | {cfg['days']} days | Pending: {pending}",
-        reply_markup=InlineKeyboardMarkup(kb)
+    text = (
+        f"*Admin Panel*\n\n"
+        f"Price: ₹{cfg['price']} for {cfg['days']} days\n"
+        f"Pending: {pending}\n\n"
+        f"Manage anime, payments & settings."
     )
+
+    await m.reply(text, reply_markup=kb)
 
 # === SUBSCRIBE ===
 @app.on_callback_query(filters.regex("^subscribe$"))
@@ -140,7 +141,7 @@ async def donate_flow(c: Client, cq: types.CallbackQuery):
 
 async def thank_you(uid):
     await asyncio.sleep(3)
-    await app.send_message(uid, "*Thank You for Your Support!*\nYour donation keeps us alive!")
+    await app.send_message(uid, "*Thank You for Your Support!*")
 
 # === SCREENSHOT ===
 @app.on_message(filters.private & filters.photo)
@@ -153,10 +154,10 @@ async def handle_screenshot(c: Client, m: types.Message):
         [InlineKeyboardButton("Approve", callback_data=f"approve_{m.from_user.id}"),
          InlineKeyboardButton("Reject", callback_data=f"reject_{m.from_user.id}")]
     ])
-    await sent.reply(f"*Pending Subscription*\nUser: {m.from_user.first_name} (@{m.from_user.username or 'N/A'})\nID: {m.from_user.id}", reply_markup=kb)
+    await sent.reply(f"*Pending*\nUser: {m.from_user.first_name}\nID: {m.from_user.id}", reply_markup=kb)
     await pending_sub.insert_one({"user_id": m.from_user.id, "msg_id": sent.message_id, "added_at": datetime.utcnow()})
     await users_col.update_one({"user_id": m.from_user.id}, {"$unset": {"awaiting_sub": ""}})
-    await m.reply("*Screenshot sent!* Admin will verify.")
+    await m.reply("*Screenshot sent!*")
 
 # === APPROVE / REJECT ===
 @app.on_callback_query(filters.regex("^approve_"))
@@ -165,24 +166,24 @@ async def approve(c: Client, cq: types.CallbackQuery):
     cfg = await get_config()
     expiry = datetime.utcnow() + timedelta(days=cfg["days"])
     await users_col.update_one({"user_id": uid}, {"$set": {"expiry": expiry}}, upsert=True)
-    await c.send_message(uid, f"*Subscription Activated!\nValid till: **{expiry.strftime('%d %b %Y')}*")
+    await c.send_message(uid, f"*Activated!\nTill: **{expiry.strftime('%d %b %Y')}*")
     await cq.message.edit_text(f"{cq.message.text}\n\n*APPROVED*")
 
 @app.on_callback_query(filters.regex("^reject_"))
 async def reject(c: Client, cq: types.CallbackQuery):
     uid = int(cq.data.split("_")[1])
-    await c.send_message(uid, "*Payment rejected.* Try again.")
+    await c.send_message(uid, "*Rejected.*")
     await cq.message.edit_text(f"{cq.message.text}\n\n*REJECTED*")
 
-# === DOWNLOAD ===
+# === DOWNLOAD FLOW ===
 async def handle_download(c: Client, m: types.Message, anime_id: str):
     user = await users_col.find_one({"user_id": m.from_user.id})
     if not user or not user.get("expiry") or user["expiry"] < datetime.utcnow():
         kb = [[InlineKeyboardButton("Subscribe Now", callback_data="subscribe")]]
-        return await m.reply("*Subscribe to access anime.*", reply_markup=InlineKeyboardMarkup(kb))
+        return await m.reply("*Subscribe first.*", reply_markup=InlineKeyboardMarkup(kb))
 
     anime = await anime_col.find_one({"_id": anime_id})
-    if not anime: return await m.reply("Anime not found.")
+    if not anime: return await m.reply("Not found.")
 
     kb = [[InlineKeyboardButton(f"Season {s['season_num']}", callback_data=f"s_{anime_id}_{s['season_num']}")] 
           for s in anime.get("seasons", [])]
@@ -192,9 +193,7 @@ async def handle_download(c: Client, m: types.Message, anime_id: str):
 async def send_video(c: Client, chat_id, file_id, title, s, e, q):
     sent = await c.send_video(
         chat_id, file_id,
-        caption=f"{title}** • S{s}E{e} • {q}\n\n"
-                "*Forward the message to save*\n"
-                "It will be *automatically deleted in 1 minute*"
+        caption=f"{title}** • S{s}E{e} • {q}\n\n*Forward to save\nAuto-delete in **1 min*"
     )
     asyncio.create_task(delete_later(sent))
 
@@ -203,10 +202,10 @@ async def delete_later(msg):
     try: await msg.delete()
     except: pass
 
-# === ADD ANIME (SIMPLE) ===
+# === ADD ANIME (BASIC) ===
 @app.on_callback_query(filters.regex("^add_anime$"))
 async def add_anime_start(c: Client, cq: types.CallbackQuery):
-    admin_states[cq.from_user.id] = {"step": "title", "data": {"type": "anime", "seasons": []}}
+    admin_states[cq.from_user.id] = {"step": "title", "data": {"type": "anime", "seasons": [{"season_num": 1, "episodes": []}]}}
     await cq.message.edit_text("*Add Anime\nSend **title*:")
 
 # === RUN BOT + FLASK ===
